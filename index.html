@@ -457,6 +457,9 @@
       .drawer-overlay { display: none; }
     }
 
+    /* The JS-driven mobile connector line is hidden on desktop */
+    .mobile-line { display: none; }
+
     /* ============================================================
        MOBILE / PHONE LAYOUT (CSS-only re-composition of the same markup
        to match the "Denta Mobile" handoff — 390x844 reference).
@@ -509,43 +512,44 @@
 
       .tip {
         left: 20px;
-        top: 140px;
+        top: 130px;
         right: auto;
         bottom: auto;
-        width: min(64vw, 248px);   /* aspect-ratio keeps 314/140 shape */
+        width: min(50vw, 195px);   /* aspect-ratio keeps 314/140 shape */
       }
 
       /* ---- Marker + connector ----
-         Marker is percentage-positioned so it stays fixed to the image (tracks
-         the tooth) across phone widths, like the desktop marker. Nudged a little
-         backward from the reference position — awaiting the exact target point. */
+         On mobile the marker is JS-positioned at the end of the fixed-angle
+         connector line, so it lands on the correct tooth at every viewport. */
       .marker {
-        left: 80%;
-        top: 38%;
         width: 52px;
         height: 52px;
         z-index: 2;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(0, 0, 0, 0.2);
       }
       /* The desktop SVG line can't be re-pointed via CSS, so hide it and draw
-         the short mobile connector as a pseudo-element between the two dots. */
+         the mobile connector via JS-positioned .mobile-line element. */
       .connector { display: none; }
       /* Tip dot pinned to the box's bottom-right corner (tracks the box width) */
       .cdot--tip {
-        left: calc(20px + min(64vw, 248px));
-        top:  calc(140px + min(64vw, 248px) * 0.4459);   /* 140/314 = box aspect */
+        left: calc(20px + min(50vw, 195px));
+        top:  calc(130px + min(50vw, 195px) * 0.4459);   /* 140/314 = box aspect */
       }
-      .cdot--marker { left: 80%; top: 38%; }   /* marker centre */
-      /* Line as a stretched-SVG diagonal in a box sized from the SAME live units
-         as both endpoints, so it always touches the corner and the marker dot,
-         at any viewport size. Box spans corner (top-left) → marker (bottom-right). */
-      .cdot--tip::after {
-        content: "";
+      /* Marker dot — JS-positioned to line endpoint */
+
+      /* JS-driven connector line — positioned and rotated by script to always
+         bridge the two dots exactly, on every device and aspect ratio. */
+      .mobile-line {
+        display: block;
         position: absolute;
-        left: 50%;
-        top: 50%;
-        width:  calc(80vw - 20px - min(64vw, 248px));
-        height: calc(38vh - 140px - min(64vw, 248px) * 0.4459);
-        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cline x1='0' y1='0' x2='100' y2='100' stroke='white' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+        top: 0;
+        left: 0;
+        height: 1px;
+        background: #FFFFFF;
+        transform-origin: 0 0;
+        pointer-events: none;
+        z-index: 3;
       }
 
       /* ---- Bottom cluster: rating / title / button stacked full width ---- */
@@ -670,6 +674,7 @@
            distort them). Positioned at the line's two endpoints. -->
       <span class="cdot cdot--tip" aria-hidden="true"></span>
       <span class="cdot cdot--marker" aria-hidden="true"></span>
+      <div class="mobile-line" aria-hidden="true"></div>
 
       <!-- Rating -->
       <div class="rating">
@@ -711,6 +716,7 @@
 
   <script>
     (function () {
+      /* ---- Drawer ---- */
       var burger = document.querySelector('.burger-btn');
       var drawer = document.getElementById('drawer');
 
@@ -719,20 +725,62 @@
         burger.setAttribute('aria-expanded', open ? 'true' : 'false');
       }
 
-      // Burger opens the drawer.
       burger.addEventListener('click', function (e) {
         e.preventDefault();
         setOpen(true);
       });
 
-      // Close on any close button or link click inside the drawer.
       document.querySelectorAll('[data-drawer-close]').forEach(function (el) {
         el.addEventListener('click', function () { setOpen(false); });
       });
 
-      // Close on Escape.
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') setOpen(false);
+      });
+
+      /* ---- Mobile connector line (JS-driven) ----
+         Fixed angle, viewport-scaled length. Marker rides the endpoint. */
+      var dotTip     = document.querySelector('.cdot--tip');
+      var dotMarker  = document.querySelector('.cdot--marker');
+      var mobileLine = document.querySelector('.mobile-line');
+      var marker     = document.querySelector('.marker');
+      var stage      = document.getElementById('stage');
+
+      var ANGLE_DEG  = 47;                                   /* fixed inclination */
+      var ANGLE_RAD  = ANGLE_DEG * Math.PI / 180;
+
+      function updateMobileLine() {
+        if (window.innerWidth > 640) return;
+
+        var vw = window.innerWidth;
+        var length = vw * 0.28;                              /* line scales with viewport width */
+
+        var stageRect = stage.getBoundingClientRect();
+        var tipRect   = dotTip.getBoundingClientRect();
+
+        /* Start point: centre of the tip dot, relative to #stage */
+        var x1 = tipRect.left + tipRect.width  / 2 - stageRect.left;
+        var y1 = tipRect.top  + tipRect.height / 2 - stageRect.top;
+
+        /* End point: fixed angle + scaled length */
+        var x2 = x1 + Math.cos(ANGLE_RAD) * length;
+        var y2 = y1 + Math.sin(ANGLE_RAD) * length;
+
+        /* Draw the line */
+        mobileLine.style.width     = length + 'px';
+        mobileLine.style.transform = 'translate(' + x1 + 'px,' + y1 + 'px) rotate(' + ANGLE_DEG + 'deg)';
+
+        /* Move marker circle + dot to the endpoint */
+        marker.style.left = x2 + 'px';
+        marker.style.top  = y2 + 'px';
+        dotMarker.style.left = x2 + 'px';
+        dotMarker.style.top  = y2 + 'px';
+      }
+
+      updateMobileLine();
+      window.addEventListener('resize', updateMobileLine);
+      window.addEventListener('orientationchange', function () {
+        setTimeout(updateMobileLine, 150);
       });
     })();
   </script>
